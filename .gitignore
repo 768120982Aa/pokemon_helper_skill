@@ -1,5 +1,7 @@
-# 数据库文件（可从上游 JSON 数据集重建）
-pokemon.db
+# 数据库文件说明：
+# pokemon.db 是 skill 运行必需的核心数据文件，已纳入版本控制。
+# 如需从上游 JSON 数据集重建，参考 SKILL.md 第八章 8.2 更新流程。
+# pokemon.db
 
 # 上游数据集（独立仓库）
 pokemon-dataset-zh-main/
