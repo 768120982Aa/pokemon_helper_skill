@@ -1,0 +1,72 @@
+{
+  "_meta": {
+    "format_version": 1,
+    "description": "宝可梦竞技规则集查询数据库",
+    "last_updated": "2026-05-02"
+  },
+  "rulesets": {
+    "sv_regulation_h": {
+      "game": "宝可梦 朱/紫",
+      "name": "Regulation H",
+      "period": "2024.9.1 ~ 2025.1.5",
+      "format": "双打 (VGC)",
+      "description": "限制最大化的规则集",
+      "rules": {
+        "level": 50,
+        "duplicate_pokemon": false,
+        "duplicate_items": false,
+        "mega_evolution": false,
+        "tera_crystal": true,
+        "legendary_banned": true,
+        "mythical_banned": true,
+        "paradox_banned": true,
+        "treasures_of_ruin_banned": true,
+        "restricted_limit": 0,
+        "special_notes": "禁止所有传说宝可梦、悖谬宝可梦、灾祸之宝"
+      }
+    },
+    "sv_regulation_g": {
+      "game": "宝可梦 朱/紫",
+      "name": "Regulation G",
+      "period": "2025.4 ~ (后续规则)",
+      "format": "双打 (VGC)",
+      "description": "允许1只传说宝可梦",
+      "rules": {
+        "level": 50,
+        "duplicate_pokemon": false,
+        "duplicate_items": false,
+        "mega_evolution": false,
+        "tera_crystal": true,
+        "legendary_banned": false,
+        "mythical_banned": true,
+        "paradox_banned": false,
+        "restricted_limit": 1,
+        "special_notes": "允许1只传说/限制级宝可梦"
+      }
+    },
+    "champions_reg_m_a": {
+      "game": "宝可梦冠军 (Pokémon Champions)",
+      "name": "Regulation Set M-A",
+      "period": "2026.4.8 ~ 2026.6.17",
+      "format": "双打 / 单打",
+      "description": "Champions 首发规则集，禁止传说宝可梦，允许超级进化",
+      "rules": {
+        "level": 50,
+        "duplicate_pokemon": false,
+        "duplicate_items": false,
+        "mega_evolution": true,
+        "mega_per_battle": 1,
+        "tera_crystal": false,
+        "legendary_banned": true,
+        "mythical_banned": true,
+        "paradox_banned": true,
+        "restricted_limit": 0,
+        "time_total_minutes": 20,
+        "time_player_minutes": 7,
+        "time_turn_seconds": 45,
+        "time_preview_seconds": 90,
+        "special_notes": "Champions 首个规则集。可用Mega进化列表见官方公告"
+      }
+    }
+  }
+}
