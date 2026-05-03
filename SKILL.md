@@ -1,782 +1,479 @@
-# Pokémon 综合助手 — Skill 文档
+# Pokémon 综合助手 — 技能文档
 
-> 版本：v1.1  
-> 适用范围：所有宝可梦相关查询、计算、数据维护  
-> 默认环境：**Pokémon Champions（SP 系统）**，朱紫/Gen9 为第二优先级  
-> 关键词触发：宝可梦、PM、Pokémon、冠军、Champions、对战、VGC、Gen9、朱紫  
+你被加载了一个宝可梦对战辅助技能。以下是你拥有的能力和使用方法。
 
 ---
 
----
+## 你能做什么
 
-## 📖 快速索引
-
-### 这个 skill 能干什么
-
-| 你想…… | 去这里 |
-|--------|--------|
-| 查一只宝可梦的属性、特性、种族值 | 第一章 1.1 |
-| 算极攻喷火龙打极限特耐快龙能打多少 | 第二章 2.1（Champions）/ 2.2（朱紫） |
-| 看某个特性对伤害有没有影响、怎么处理 | **第三章（对伤害计算很重要！）** |
-| 算钢+妖精有多少抗性和弱点 | 第四章 4.2 |
-| 查一个招式/道具/特性的具体数据 | 第五章 5.1 / 5.2 / 5.3 |
-| 问当前对战用什么规则 | 第六章 6.3 |
-| 分析队伍的联防和打击面有没有漏洞 | 第七章 7.1 / 7.2 |
-| 想知道两个宝可梦谁快 | 第九章 9.1 |
-| 查进化链/蛋招式/可学招式 | 第九章 9.2 |
-| 告诉我「游戏更新了，更新数据库」 | 第八章 8.2 |
-| 数据库里没有这个数据 | 第十章 10.2 兜底规则 |
-
-### 重要提示
-
-- 🥇 **默认 Champions。** 所有计算优先用 SP 系统。只有你明确说「朱紫」「努力值」「Gen9」我才切过去。
-- 😠 **特性一定要查第三章。** 不要凭印象处理特性——每个特性的 effect 文本都要读，确定它影响哪个参数（能力值/威力/倍率/相克），再对应调整公式。
-- 🤚 **不编造数据。** 数据库没有的就是没有，不会假装知道。
+1. **查数据** — 宝可梦、招式、特性、道具的基础信息
+2. **算伤害** — 调用计算引擎，输出伤害范围和击杀判定
+3. **查相克** — 属性攻防抗性、双属性组合的弱点免疫
+4. **配队伍** — 联防分析、打击面覆盖、速度线对比
+5. **查规则** — 当前主流对战规则集（Champions / VGC）
 
 ---
 
-## 核心原则
+## 快速索引
 
-1. **默认 Champions，除非用户明确说朱紫。** 计算能力值用 `calc_champions_stats()`，SP 分配用 SP 表，规则集优先查 `champions_reg_m_a`。
-2. **能用脚本调用的，不手算。** `calc_damage.py` 里有的函数优先用。
-3. **能用 SQL 查的，不猜。** 数据库里有的数据不要凭记忆回答。
-4. **查不到就说查不到。** 不编造种族值、招式威力、特性效果。
-5. **多形态优先匹配。** 查询时始终指定 `form`，默认取 `'一般'` 或第一条记录。
+| 你想 | 怎么做 |
+|:----|:------|
+| 查某只宝可梦的种族值、属性、特性 | [查宝可梦](#1-查宝可梦) |
+| 查某个招式的威力、属性、分类标签 | [查招式](#2-查招式) |
+| 查某个特性的效果 | [查特性](#3-查特性) |
+| 想知道一个招式是否受某个特性加成 | [特性+招式联动](#4-特性与招式联动) |
+| 完整计算一次伤害（SQL → 手动修正 → Python） | [完整计算示例](#5-计算伤害) |
+| 只算纯数值（所有修正已处理好） | [纯数值计算](#53-纯数值计算) |
+| 查某只宝可梦有哪些弱点抗性 | [属性相克](#6-属性相克) |
+| 查当前比赛用什么规则 | [规则集](#7-规则集) |
+| 查进化链/蛋招式/学习招式 | [进化与学习](#8-进化与学习) |
+| 数据库没有这个数据 | [兜底规则](#9-兜底规则) |
 
 ---
 
-## 一、能力值相关
-
-### 1.1 查询宝可梦基本信息（两环境通用）
+## 1. 查宝可梦
 
 ```sql
--- 基本信息（名称、图鉴编号）
-SELECT * FROM pokemon WHERE name_zh = '{name}' OR pokedex_id = '{id}';
+-- 基本信息（图鉴编号、名字）
+SELECT * FROM pokemon WHERE name_zh = '艾路雷朵';
 
 -- 形态信息（属性、特性列表）
 SELECT form_name, type1, type2, ability1, ability2, hidden_ability
-FROM pokemon_forms WHERE pokedex_id = '{pid}';
+FROM pokemon_forms WHERE pokedex_id = '0475';
 
 -- 种族值（指定形态）
 SELECT hp, attack, defense, sp_attack, sp_defense, speed
-FROM pokemon_stats WHERE pokedex_id = '{pid}' AND form = '{form}';
+FROM pokemon_stats WHERE pokedex_id = '0475' AND form = '一般';
 ```
 
-**多形态处理：** 先查 `pokemon_forms` 看看有哪些形态，让用户确认用哪个。例如风速狗有普通和洗翠两种形态。
-
-**形态匹配规则：** `pokemon_forms.form_name` 与 `pokemon_stats.form` 对应。一般形态的 form 值为空字符串 `''` 或 `'一般'`。
+> **图鉴 ID** 是 4 位文本，如 `'0475'`（艾路雷朵）、`'0006'`（喷火龙）。用 `name_zh` 查也可以。
+>
+> **多形态处理：**
+> 1. 先查 `pokemon_forms` 看有哪些形态：
+>    ```sql
+>    SELECT form_name FROM pokemon_forms WHERE pokedex_id = '0475';
+>    -- → ['艾路雷朵', '超级艾路雷朵']
+>    ```
+> 2. 不同表对形态的叫法不一致，按此规则映射：
+>
+>    | 宝可梦形态 | `pokemon_forms.form_name` | `pokemon_stats.form` | `pokemon_type_effectiveness.form` |
+>    |:----------|:-------------------------|:--------------------|:--------------------------------|
+>    | 一般形态 | '艾路雷朵' | `'一般'` | `''`（空字符串） |
+>    | Mega 形态 | '超级艾路雷朵' | `'超级进化'` | `''`（多数情况，查不到时用空串） |
+>    | 特殊形态（如喷火龙X/Y） | '超级喷火龙Ｘ' | `'超级喷火龙Ｘ'` | `'超级喷火龙Ｘ'` |
+>
+>    简单规则：**查种族值时 `form='一般'` 是一般形态，`form='超级进化'` 是 Mega 形态。查属性相克时先用 `form=''`（空字符串），没有结果再试具体形态名。**
 
 ---
 
-### 1.2 🥇 计算能力值（Champions SP 系统）
+## 2. 查招式
 
-**这是默认使用的公式。** 除非用户明确提到「朱紫」「努力值」「Gen9」，否则用这套。
-
-> 📎 详细公式原理（SP 与 EV 的换算关系、性格修正推导）见 `pokemon_formulas_champions.md` 第一章。
-
-调用 `calc_damage.calc_champions_stats()`：
-
-```python
-from calc_damage import calc_champions_stats
-
-stats = calc_champions_stats(
-    pokedex_id=6,                        # 图鉴编号
-    sps={'hp':0, 'attack':32, 'defense':0, 'sp_attack':0, 'sp_defense':0, 'speed':0},
-    nature='固执',
-    form='一般'
-)
-# 公式（固定 Lv.50, IV=31）：
-#   HP  = 种族值 + SP_hp + 75
-#   其他 = (种族值 + SP_stat + 20) × 性格修正（向下取整）
+```sql
+SELECT name_zh, type, category, power, accuracy, pp
+FROM moves WHERE name_zh = '圣剑';
 ```
 
-**SP 分配速查表（Champions 默认）：**
+`moves` 表额外包含 9 个 **招式分类标签**（值均为 0 或 1），用于判断特性是否生效：
 
-| 称呼 | SP 分配 | 性格 | 说明 |
-|------|---------|------|------|
-| 极攻 | Atk/SpA=32 | +攻性格（固执/内敛等） | 标准输出手配置 |
-| 满攻 | Atk/SpA=32 | 不减攻性格 | 需要速度/耐久时 |
-| 极速 | Spd=32 | +速性格（爽朗/胆小等） | 高速线争夺 |
-| 满HP | HP=32 | 不限 | 盾向/空间手 |
-| 极限物耐 | HP=32, Def=32 | +防性格 | 物盾 |
-| 极限特耐 | HP=32, SpD=32 | +特防性格 | 特盾 |
-| 无速 | 不加速度 | 减速性格 | 空间队 |
-| 双刀 | Atk=32, SpA=32 | 不减双攻性格 | 双刀用法 |
+| 字段 | 含义 | 关联的特性 |
+|:----|:----|:----------|
+| `makes_contact` | 接触类 | 硬爪(×1.3)、毛茸茸(×0.5) |
+| `is_slicing` | 剑/切割类 | **锋锐(×1.5)** |
+| `is_punch` | 拳类 | **铁拳(×1.2)** |
+| `is_bite` | 咬类 | **强壮之颚(×1.5)** |
+| `is_sound` | 声音类 | **庞克摇滚(×1.3)**、隔音(免疫) |
+| `is_bullet` | 弹/炸弹类 | 防弹(免疫) |
+| `is_pulse` | 波动类 | Mega发射器(×1.5) |
+| `is_wind` | 风类 | 冲浪之尾(免疫+攻击提升) |
+| `has_secondary` | 有追加效果 | **强行(Sheer Force)(×1.3)** |
 
-**性格修正查询：** 见 `calc_damage._get_nature_mods()` 中的完整表格（20种修正性格 + 5种无修正）。
+```sql
+-- 查招式分类标签
+SELECT name_zh, type, power, makes_contact, is_slicing, is_punch, has_secondary
+FROM moves WHERE name_zh = '圣剑';
+-- 结果：makes_contact=1, is_slicing=1 → 可触发锋锐
+```
+
+> `power` 字段是文本类型，变化类招式值为 `'—'`，取值时需转换。
 
 ---
 
-### 1.3 🥈 计算能力值（朱紫/Gen9 努力值系统）
+## 3. 查特性
 
-只在用户明确提及「朱紫」「努力值」「Gen9」「VGC 朱紫」时使用。
+有两个表可用：
 
-> 📎 完整公式推导、个体值/努力值/性格修正的详细说明见 `pokemon_formulas_gen9.md` 第一章。
+### 3.1 效果原文 — `abilities` 表
 
-调用 `calc_damage.calc_all_stats()`：
+全部 307 个特性的中文介绍和效果原文：
 
-```python
-from calc_damage import calc_all_stats
-
-stats = calc_all_stats(
-    pokedex_id=6,
-    level=50,
-    evs={'hp':0, 'attack':0, 'defense':0, 'sp_attack':252, 'sp_defense':0, 'speed':252},
-    nature='内敛',
-    form='一般'
-)
-# 公式（Lv.50, 默认 IV=31）：
-#   HP  = (种族值×2 + IV + EV÷4) × Lv÷100 + Lv + 10
-#   其他 = (种族值×2 + IV + EV÷4) × Lv÷100 + 5 × 性格修正
+```sql
+SELECT name_zh, name_en, effect FROM abilities WHERE name_zh = '锋锐';
 ```
 
-**EV 分配速查表（朱紫参考）：**
+### 3.2 结构化数据 — `ability_effects` 表
 
-| 称呼 | EV 分配 | 等效 Champions SP |
-|------|---------|------------------|
-| 极攻 | 252Atk/SpA | Atk/SpA=32 |
-| 极速 | 252Spd | Spd=32 |
-| 满HP | 252HP | HP=32 |
-| 极限物耐 | 252HP 252Def | HP=32, Def=32 |
-| 极攻极速 | 252Atk/SpA 252Spd | Atk=32, Spd=32 |
+163 个**影响伤害计算**的特性，按效果类型分类，含具体的倍率和触发条件：
+
+```sql
+SELECT * FROM ability_effects WHERE ability_name = '锋锐';
+```
+
+**字段说明：**
+
+| 字段 | 含义 | 示例值 |
+|:----|:----|:------|
+| `effect_type` | 效果类别 | `move_power` / `stat` / `damage_taken` / `type_immune` / `type_change` / `rule` / `crit_immune` / `none` |
+| `target` | 作用目标 | `self_attack`（攻击方自身） / `self_defense`（防御方自身） / `opponent`（对方） |
+| `param` | 影响的参数 | `move_power` / `attack` / `defense` / `speed` / `other_mod` / `type_eff` / `screens` |
+| `modifier` | 数值倍率 | `1.5`（×1.5倍） / `0.5`（减半） / `0.0`（免疫） |
+| `flag_field` | 关联的招式标签 | `is_slicing` / `is_punch` / `makes_contact` / NULL |
+| `condition` | 触发条件（文字） | 供你直接阅读 |
+
+**effect_type 分类速查：**
+
+| 类别 | 含义 | 数量 | 你的处理方式 |
+|:----|:----|:---:|:-----------|
+| `move_power` | 改变招式威力 | 25 | 调用 `calc_damage` 前手动调整 `move_power` 参数 |
+| `stat` | 改变能力值 | 40 | 调用前手动调整 `stats` 字典的值 |
+| `damage_taken` | 减免受到的伤害 | 20 | 调用前手动调整 `other_mod` 或通过 `items` 参数传入 |
+| `type_immune` | 属性免疫 | 14 | 通过 `abilities` 参数传入，函数自动处理 |
+| `type_change` | 改变招式属性（皮肤系） | 9 | 调用前手动改 `move_type`，并重新计算 STAB |
+| `rule` | 特殊规则 | 23 | 见对应规则说明 |
+| `crit_immune` | 暴击免疫 | 2 | 告知用户不会暴击 |
+| `none` | 不参与伤害计算 | 30 | 仅告知用户存在此特性 |
+
+> 如果特性不在 `ability_effects` 表中，请查 `abilities` 表读 `effect` 原文，自行判断效果。
 
 ---
 
-### 1.4 能力变化阶段倍率表（两环境通用）
+## 4. 特性与招式联动
 
-| 阶段 | +6 | +5 | +4 | +3 | +2 | +1 | 0 | -1 | -2 | -3 | -4 | -5 | -6 |
-|------|----|----|----|----|----|----|----|----|----|----|----|----|----|
-| 倍率 | 4.0 | 3.5 | 3.0 | 2.5 | 2.0 | 1.5 | 1.0 | 0.67 | 0.5 | 0.4 | 0.33 | 0.29 | 0.25 |
+判断一个特性是否影响某招式：
 
-用法：最终能力值 = 基础能力值 × 倍率（向下取整）
+```sql
+-- 步骤 1：查特性的效果
+SELECT effect_type, param, modifier, flag_field, condition
+FROM ability_effects WHERE ability_name = '锋锐';
+-- → effect_type=move_power, modifier=1.5, flag_field=is_slicing
+
+-- 步骤 2：查招式是否有对应的标签
+SELECT name_zh, is_slicing FROM moves WHERE name_zh = '圣剑';
+-- → is_slicing=1
+
+-- 结论：锋锐的 flag_field=is_slicing，圣剑的 is_slicing=1 → 锋锐生效，威力 ×1.5
+```
 
 ---
 
-## 二、伤害计算
+## 5. 计算伤害
 
-**默认使用 Champions 环境的 `quick_calc_champions()`。** 只有用户明确说朱紫才切到 `quick_calc()`。
+`calc_damage.py` 提供 6 个公开接口：
 
-### 2.1 🥇 Champions 快速计算（默认）
+| 函数 | 用途 |
+|:----|:-----|
+| `calc_champions_stats()` | Champions SP 能力值计算 |
+| `calc_gen9_stats()` | 朱紫/Gen9 努力值能力值计算 |
+| `calc_damage()` | **完整伤害计算**（核心函数） |
+| `calc_damage_raw()` | 纯数值伤害计算（不查数据库） |
+| `list_rulesets()` | 列出所有规则集 |
+| `get_ruleset()` | 查某个规则集详情 |
 
-> 📎 完整的逐步计算流程（含具体示例：Mega巨钳螳螂 子弹拳 → 洗翠风速狗）见 `workflow.md`。
+**重要原则：** `calc_damage()` 是纯计算引擎，只处理：
+- 天气/场地/灼伤/墙壁等场况
+- 属性相克（含胆量、飘浮等影响 type_eff 的特性）
+- 道具（属性增强×1.2、讲究系列×1.5、命玉×1.3、达人带）
 
-```python
-from calc_damage import quick_calc_champions
+**所有其他特性修正**（锋锐×1.5、大力士攻×2、厚脂肪×0.5 等）必须由你在调用前自行处理，通过调整 `move_power`、`attacker_stats`、`other_mod` 等参数传入。
 
-print(quick_calc_champions(
-    '海豚侠', '喷射拳', '喷火龙',
-    atk_sp=32,              # 攻击 SP（默认极攻）
-    spd_sp=0,               # 速度 SP
-    def_sp=0,               # 防御 SP
-    hp_sp=0,                # HP SP
-    sdef_sp=0,              # 特防 SP
-    nature='固执',
-    def_nature='认真',       # 防御方性格
-    item='神秘水滴',         # 道具（可选）
-    weather=None,           # 天气
-    terrain=None,           # 场地
-    is_critical=False,
-    screens=0,
-))
+### 5.1 完整计算流程（标准工作流）
+
+以「极攻锋锐艾路雷朵 圣剑 vs 满HP Mega巨金怪」为例：
+
+```
+第 1 步 [SQL] → 查宝可梦数据和种族值
+第 2 步 [SQL] → 查招式基础威力和分类标签
+第 3 步 [SQL] → 查特性效果（锋锐的倍率和 flag）
+第 4 步 [手动] → 推理：标签匹配→修正参数
+第 5 步 [Python] → 计算能力值
+第 6 步 [Python] → 计算伤害
+第 7 步 [手动] → 解读结果
 ```
 
-### 2.2 🥈 朱紫快速计算
+**第 1-3 步：SQL 查数据**
 
-> 📎 朱紫专属的伤害公式细节、随机数规则、特性/道具在公式中的具体位置见 `pokemon_formulas_gen9.md` 第二章。
+```sql
+-- 查艾路雷朵
+SELECT hp, attack, defense, sp_attack, sp_defense, speed
+FROM pokemon_stats WHERE pokedex_id='0475' AND form='一般';
+-- → 68/125/65/65/115/80
 
-```python
-from calc_damage import quick_calc
+-- 查圣剑标签
+SELECT is_slicing FROM moves WHERE name_zh='圣剑';
+-- → 1（剑类，可触发锋锐）
 
-print(quick_calc(
-    '喷火龙', '喷射火焰', '妙蛙种子',
-    level=50,
-    atk_ev=252, def_ev=0,   # 努力值
-    nature='内敛',
-    weather=None, terrain=None,
-    is_critical=False,
-    screens=0,
-))
+-- 查圣剑基础威力
+SELECT power FROM moves WHERE name_zh='圣剑';
+-- → 90
+
+-- 查锋锐效果
+SELECT effect_type, modifier, flag_field FROM ability_effects WHERE ability_name='锋锐';
+-- → move_power, 1.5, is_slicing
 ```
 
-### 2.3 完整参数版（两环境通用）
+**第 4 步：手动推理修正**
 
-当快速计算接口的参数不够用时，手动准备数据后调 `calc_damage()`：
+```
+圣剑.is_slicing(1) == 锋锐.flag_field(is_slicing) → 匹配
+→ move_power = 90 × 1.5 = 135
+```
+
+**第 5-6 步：Python 计算**
 
 ```python
-from calc_damage import calc_damage, calc_champions_stats, get_pokemon_info, get_move_info
+from calc_damage import calc_champions_stats, calc_damage
 
-# 以 Champions 为例
-atk_info = get_pokemon_info('海豚侠')
-def_info = get_pokemon_info('喷火龙')
-move_info = get_move_info('喷射拳')
+# 攻击方能力值
+atk = calc_champions_stats('0475', sps={'attack':32}, nature='固执', form='一般')
 
-atk_stats = calc_champions_stats(963, sps={'attack':32}, nature='固执')
-def_stats = calc_champions_stats(6, sps={'hp':32}, nature='认真')
+# 防御方能力值
+def_ = calc_champions_stats('0376', sps={'hp':32}, nature='认真', form='超级进化')
 
+# 计算伤害（已手动修正 move_power=135）
 result = calc_damage(
-    atk_stats, def_stats,
-    move_power=int(move_info['power']),
-    move_category=move_info['category'],
-    attacker_types=['水'],
-    defender_types=['火','飞行'],
-    move_type='水',
-    weather='rain',          # 雨天
-    terrain=None,
-    is_burned=False,
-    screens=0,
-    help_active=False,
-    multi_target=False,
-    items={'attacker': '神秘水滴'},
-    abilities=None,          # 特性影响请在调用前处理好，见第三章
+    atk, def_,
+    move_power=135,           # 已含锋锐修正
+    move_category='物理',
+    attacker_types=['超能力','格斗'],
+    defender_types=['钢','超能力'],
+    move_type='格斗',
 )
 ```
 
-### 2.4 纯数值接口
+**第 7 步：解读结果**
 
-不查数据库，所有参数手动传入。适合调用方已准备好所有数值的场景：
+```python
+hp = def_['hp']  # 187
+print(result['min'], '~', result['max'])  # 87 ~ 103
+
+if result['min'] >= hp:
+    print('确一 (OHKO)')
+elif result['max'] >= hp:
+    pct = sum(1 for d in result['rolls'] if d >= hp) / 16 * 100
+    print(f'乱一 ({pct:.0f}%)')
+else:
+    hits = (hp + result['max'] - 1) // result['max']
+    two_pct = sum(1 for a in result['rolls'] for b in result['rolls']
+                  if a + b >= hp) / 256 * 100
+    print(f'需要 {hits} 次击杀, 2次率={two_pct:.0f}%')
+```
+
+### 5.2 朱紫/Gen9 能力值计算
+
+只在用户明确提到「朱紫」「努力值」「Gen9」时使用。流程与 5.1 相同，只是能力值计算函数换为 `calc_gen9_stats`：
+
+```python
+from calc_damage import calc_gen9_stats, calc_damage
+
+atk = calc_gen9_stats('0006', level=50,
+    evs={'sp_attack':252, 'speed':252},
+    nature='内敛', form='一般')
+
+def_ = calc_gen9_stats('0001', level=50,
+    evs={'hp':252, 'sp_defense':252},
+    nature='慎重', form='一般')
+
+result = calc_damage(atk, def_, move_power=90, move_category='特殊',
+    attacker_types=['火','飞行'], defender_types=['草','毒'],
+    move_type='火',
+    weather='sun')  # 晴天火系×1.5
+```
+
+> **能力值公式（Lv.50, IV=31）：**
+> - HP = (种族值×2 + 31 + EV÷4) × 50÷100 + 50 + 10
+> - 其他 = ((种族值×2 + 31 + EV÷4) × 50÷100 + 5) × 性格修正（向下取整）
+
+### 5.3 纯数值计算
+
+当所有修正已在外部处理好，只需要算裸伤害时：
 
 ```python
 from calc_damage import calc_damage_raw
 
 result = calc_damage_raw(
     level=50,
-    attack=202,             # 最终攻击值（含性格、能力变化、道具修正）
-    defense=100,            # 最终防御值
-    move_power=60,          # 最终威力（含技术高手等修正）
+    attack=194,           # 最终攻击值
+    defense=170,          # 最终防御值
+    move_power=135,       # 最终威力（含特性/道具修正）
     stab=1.5,
-    type_effectiveness=2.0,
-    other_mod=1.0,
+    type_effectiveness=1.0,
+    other_mod=1.0,        # 含天气/场地/道具/减伤特性等所有修正
     is_critical=False,
 )
 ```
 
-### 2.5 伤害判定规则
+### 5.4 Champions SP 分配参考
 
-```python
-hp = def_stats['hp']
-if result['min'] >= hp:
-    判定 = "确一 (OHKO)"
-elif result['max'] >= hp:
-    kill_count = sum(1 for d in result['rolls'] if d >= hp)
-    概率 = kill_count / len(result['rolls']) * 100
-    判定 = f"乱一 ({概率:.0f}%)"
-else:
-    hits = (hp + result['max'] - 1) // result['max']
-    判定 = f"需要 {hits} 次击杀"
+| 称呼 | SP 分配 | 性格 |
+|:----|:--------|:----|
+| 极攻 | Atk/SpA=32 | +攻性格（固执/内敛） |
+| 极速 | Spd=32 | +速性格（爽朗/胆小） |
+| 满HP | HP=32 | 不限 |
+| 极限物耐 | HP=32, Def=32 | +防性格 |
+| 极限特耐 | HP=32, SpD=32 | +特防性格 |
+| 无速 | 不加速度 | 减速性格 |
+
+> **SP 公式（Lv.50）：** HP = 种族值 + SP_hp + 75；其他 = (种族值 + SP_stat + 20) × 性格修正（向下取整）
+
+### 5.5 特性处理顺序参考
+
+调用 `calc_damage` 前，需自行按此顺序修正参数：
+
+```
+第 0 层：规则层（最先判断）
+  破格/涡轮火焰/兆级电压 → 防御方特性不生效
+  化学变化气体 → 双方特性不生效
+  纯朴 → 无视双方能力变化
+
+第 1 层：能力值层（改 stats 字典）
+  大力士 → atk_stats['attack'] *= 2
+  威吓 → def_stats['attack'] = int(def_stats['attack'] * 0.67)
+  灾祸系列 → 全场能力×0.75
+  不挠之剑 → atk_stats['attack'] = int(atk_stats['attack'] * 1.5)
+
+第 2 层：招式威力层（改 move_power）
+  锋锐 → 查 moves.is_slicing → move_power = int(move_power * 1.5)
+  铁拳 → 查 moves.is_punch → move_power = int(move_power * 1.2)
+  皮肤系 → 改 move_type + move_power = int(move_power * 1.2)
+
+第 3 层：减伤层（改 other_mod）
+  厚脂肪 → other_mod *= 0.5（火/冰）
+  多重鳞片 → other_mod *= 0.5（满血时）
+  毛皮大衣 → other_mod *= 0.5（物理招式）
+
+第 4 层：type_eff 修正（通过 abilities 参数传入 calc_damage）
+  飘浮 → calc_damage(..., abilities={'defender':'飘浮'})
+  胆量 → calc_damage(..., abilities={'attacker':'胆量'})
+  引火 → calc_damage(..., abilities={'defender':'引火'})
 ```
 
 ---
 
-## 三、 特性判定
+## 6. 属性相克
 
-**这是整个 skill 最关键的判断环节。** 特性会影响能力值、招式威力、伤害倍率、属性相克等多个参数，**不能在各个章节零散处理**，必须在计算伤害前汇总判断。
-
-### 3.1 特性判定流程（必读）
-
-```
-步骤 1：查攻击方和防御方拥有的特性
-─────────────────────────────
-  SELECT ability1, ability2, hidden_ability
-  FROM pokemon_forms WHERE pokedex_id = '{pid}' AND form_name LIKE '%{form}%'
-
-步骤 2：拿到特性名后，查效果文本
-─────────────────────────────
-  SELECT name_zh, effect, introduction
-  FROM abilities WHERE name_zh = '{ability_name}'
-
-步骤 3：读 effect 文本，判断影响哪个参数
-─────────────────────────────
-  ⚠️ 不能只看特性名就下结论。必须读 effect 原文，判断：
-     - 改能力值（攻击/防御/速度等）→ 最终在调用 calc_damage 前调整 stats
-     - 改招式威力（含「威力提高」等表述）→ 调整 move_power
-     - 改伤害倍率 → 加入 other_mod
-     - 改属性相克（含「免疫」「減半」等）→ 调整 type_effectiveness
-     - 其他效果（回血、追加效果、场地等）→ 根据具体效果单独处理
-
-步骤 4：分类处理后，将结果代入 calc_damage
-─────────────────────────────
-```
-
-### 3.2 按影响参数分类的完整特性列表
-
-以下列表按影响参数分类。**这是一个参考列表，不是穷尽列表。** 实际判断始终以步骤 2 的 `effect` 原文为准。
-
-#### 3.2.1 影响能力值（在调用 calc_damage 前调整 stats）
-
-| 特性 | 效果 | 判断依据（看 effect 中是否含以下关键词） |
-|------|------|------------------------------------------|
-| 大力士 / 瑜伽之力 | 攻击×2.0 | 「攻击变为2倍」 |
-| 毅力 | 烧伤时攻击×1.5，无视烧伤物攻减半 | 「攻击提升」「无视烧伤」 |
-| 强行 | 有追加效果时威力×1.3，追加效果不触发 | 「招式威力提升」+「追加效果不再发动」——注意：这是 move_power 类，不是能力值类 |
-| 慢启动 | 5回合内攻击速度减半 | 「攻击」「速度减半」 |
-| 太阳之力 | 晴天特攻×1.5，每回合损失HP | 「特攻提升」 |
-| 叶绿素 / 悠游自如 / 拨沙 / 拨雪 | 对应天气下速度×2 | 「速度提升」|
-| 轻装 | 失去道具时速度×2 | 「速度提升」+「道具」 |
-| 万能变身（变幻自如 / 自由者） | 使用招式时变为该属性 | 改的是属性，不是能力值——见 3.2.4 |
-
-**处理方式：**
-```python
-# 例：大力士 → 攻击翻倍
-if attacker_ability == '大力士':
-    atk_stats['attack'] = atk_stats['attack'] * 2
-# 例：烧伤 + 毅力 → 攻击×1.5 且不触发烧伤减半
-if is_burned and attacker_ability == '毅力':
-    atk_stats['attack'] = int(atk_stats['attack'] * 1.5)
-    is_burned = False  # 标记为已处理，后续 other_mod 不再乘 0.5
-```
-
-#### 3.2.2 影响招式威力（调整 move_power）
-
-| 特性 | 效果 | 判断关键词 |
-|------|------|-----------|
-| 技术高手 | 威力≤60的招式×1.5 | 「威力≤60的招式」「威力提高」 |
-| 铁拳 | 拳类招式×1.2 | 「拳类招式」「威力提高」 |
-| 强壮之颚 | 咬类招式×1.5 | 「咬类招式」「威力提高」 |
-| 锐利目光 | 命中率不会降低（不影响伤害） | 不处理 |
-| 狙击手 | 击中要害时伤害×2.25（代替1.5） | 「击中要害」「提升」 |
-| 异兽提升 | 打倒对手后最高能力×1.1 | 战后能力变化，当前回合不处理 |
-| 庞克摇滚 | 声音类招式×1.3 | 「声音类招式」「威力提高」 |
-| 冲浪之尾 / 钢铁意志 | 特定条件（入水/铁壁形态）威力提升 | 看 effect 具体条件 |
-| 大力士（复） | 已在 3.2.1 中处理，此处不重复 | |
-
-**注意强行（Sheer Force）：** 它的 effect 通常描述为「招式威力提升」和「追加效果不再触发」。如果招式有追加效果（如喷射火焰10%烧伤），则 move_power ×1.3，同时无视道具（生命宝珠不扣血、追加效果不触发）。如果招式本身没有追加效果，强行不生效。
-
-**处理方式：**
-```python
-if attacker_ability == '技术高手' and move_power <= 60:
-    move_power = int(move_power * 1.5)
-```
-
-#### 3.2.3 影响伤害倍率（调整 other_mod）
-
-| 特性 | 效果 | 判断关键词 |
-|------|------|-----------|
-| 厚脂肪 | 受到火/冰招式伤害×0.5 | 「火」「冰」「减半」 |
-| 坚硬岩石 | 受到效果绝佳招式伤害×0.75 | 「效果绝佳」「减伤」 |
-| 过滤 | 受到效果绝佳招式伤害×0.75 | 「效果绝佳」「减伤」同坚硬岩石 |
-| 多重鳞片 | HP全满时受到伤害×0.5 | 「HP全满」「减半」 |
-| 幻影防守 | HP全满时受到伤害×0.5 | 同上（效果同多重鳞片） |
-| 冰鳞粉 | 受到特殊招式伤害×0.5 | 「特殊招式」「减半」 |
-| 友情防守 | 队友在场时受到伤害×0.75 | 「队友」「减伤」 |
-| 毛茸茸 | 接触类招式伤害×0.5，但火招式×2 | 「接触」「减半」「火→2倍」 |
-| 干燥皮肤 | 水招式无效+回HP，火招式×1.25 | 「水」「回复」「火」「提升」——注意这是属性相克类 |
-| 重金属 / 轻金属 | 仅影响重量，不影响伤害 | 除非涉及打草结等重量相关招式 |
-| 神奇守护（欠揍） | 只有效果绝佳招式能命中 | 效果绝佳以外的招式 multiplier 设为 0 |
-| 凸凸头盔 / 附着针 / 污泥浆等 | 反伤类，不参与伤害计算 | 告知用户存在此特性即可 |
-| 诅咒之躯 / 孢子 / 静电等 | 接触后追加效果类 | 不参与伤害计算，告知用户 |
-
-**处理方式：**
-```python
-# 厚脂肪：火/冰 ×0.5
-if defender_ability == '厚脂肪' and move_type in ('火', '冰'):
-    other_mod *= 0.5
-```
-
-#### 3.2.4 影响属性相克（调整 type_effectiveness）
-
-| 特性 | 效果 | 处理方式 |
-|------|------|---------|
-| 飘浮 | 地面招式免疫→×0 | type_effectiveness = 0 |
-| 引火 | 火招式免疫，且特攻提升一级 | type_eff=0，额外告知触发提升效果 |
-| 蓄电 / 避雷针 / 电气引擎 | 电招式免疫 | type_eff=0，电气引擎提升速度 |
-| 引水 / 储水 | 水招式免疫 | type_eff=0，引水提升特攻、储水回复HP |
-| 干燥皮肤 | 水招式回复HP | 水招式 type_eff 设为负值（回血标记） |
-| 胆量 | 一般/格斗可命中幽灵 | 原本 type_eff=0 的幽灵对一般/格斗改为 1.0 |
-| 透光 / 察觉 | 不改变相克 | 不处理 |
-
-**处理方式：** 在查完 `pokemon_type_effectiveness` 表的倍率之后，再根据特性做二次修正。
-
-#### 3.2.5 影响等级或特殊计算
-
-| 特性 | 效果 | 处理 |
-|------|------|------|
-| 穿透 | 无视光墙/反射壁/替身 | screens 参数设为 0 |
-| 破格 / 涡轮火焰 / 兆级电压 | 无视对方特性 | 对方特性不生效 |
-| 化学变化气体 | 全场特性失效（除自己） | 双方特性均不生效 |
-| 同步 | 传递给对方异常状态 | 不参与伤害计算 |
-| 复制 | 复制对方特性 | 查对方特性作为自己的特性 |
-| 变身者 | 变身成对方样子 | 复制对方全部能力 |
-
-**破格处理示例：**
-```python
-if attacker_ability in ('破格', '涡轮火焰', '兆级电压'):
-    # 防御方特性失效
-    defender_ability = None  # 不应用任何防御方特性效果
-```
-
-### 3.3 综合判断示例
-
-假设计算「大力士玛力露丽 水流尾 → 厚脂肪卡比兽」：
-
-```
-1. 查特性：攻击方=大力士，防御方=厚脂肪
-2. 读效果：
-   - 大力士：「攻击×2」→ 能力值类，stats['attack'] ×= 2
-   - 厚脂肪：「受到火/冰招式减半」→ 水流尾是水，不触发
-3. 调用 calc_damage：
-   - attack = 已 ×2 后的值
-   - other_mod 不因厚脂肪改变（水不触发）
-4. 判定结果
-```
-
-假设计算「大晴天+叶绿素妙蛙花 亿万吸取 → 引水海兔兽」：
-
-```
-1. 查特性：攻击方=叶绿素，防御方=引水
-2. 读效果：
-   - 叶绿素：「晴天速度×2」→ 影响速度，不影响当前伤害
-   - 引水：「水招式免疫并提升特攻」→ 亿万吸取是草，不触发
-3. 防御方另一个特性可能是「储水」→ 也不是草，不触发
-4. 正常计算
-```
-
----
-
-## 四、属性与抗性
-
-### 4.1 单属性相克查询
+`pokemon_type_effectiveness` 表已将双属性合并计算好：
 
 ```sql
+-- 查 Mega 巨金怪（钢+超能）的弱点/抗性
 SELECT defending_type, multiplier
 FROM pokemon_type_effectiveness
-WHERE pokedex_id = '{defender_pid}' AND form = '{form}'
-ORDER BY multiplier ASC;
-```
-
-### 4.2 双属性组合抗性
-
-**路径 A（推荐）：** 直接用宝可梦查。`pokemon_type_effectiveness` 已经将双属性合并计算好。
-
-```sql
-SELECT defending_type, multiplier
-FROM pokemon_type_effectiveness
-WHERE pokedex_id = '{pid}' AND form = '{form}'
+WHERE pokedex_id = '0376' AND form = '超级进化'
 ORDER BY multiplier;
-
--- multiplier 含义：
--- 0     = 免疫
--- 0.25  = 四倍抗
--- 0.5   = 二倍抗
--- 1.0   = 普通
--- 2.0   = 二倍弱
--- 4.0   = 四倍弱
 ```
 
-**路径 B（理论查询）：** 用户问「某属性+某属性有多少抗性」时，找一个具有该属性组合的宝可梦，用路径 A 查。
+| multiplier | 含义 |
+|:---------:|:-----|
+| 0 | 免疫 |
+| 0.25 | 四倍抗 |
+| 0.5 | 二倍抗 |
+| 1.0 | 普通 |
+| 2.0 | 二倍弱 |
+| 4.0 | 四倍弱 |
 
-**注意：** 查完属性倍率后，还需要结合第三章「特性判定」中的 3.2.4 节修正——例如飘浮让地面免疫、引火让火免疫等。
-
-### 4.3 属性组合→弱点/抗性列表生成（给用户看）
-
-输出格式建议：
-
-```
-钢+妖精 属性组合：
-─────────────────────────
-🛡 免疫：毒（×0）、龙（×0）
-👍 四倍抗：虫（×¼）
-👍 二倍抗：一般、草、冰、飞行、超能、岩石、恶、妖精（×½）
-⚠️ 普通：水、电、格斗、幽灵
-💀 二倍弱：火、地面（×2）
-💀 四倍弱：无
-```
+> 注意：特性可能额外修正相克——飘浮(地面免疫)、引火(火免疫)、胆量(可打幽灵)。这些通过 `calc_damage` 的 `abilities` 参数自动处理。
 
 ---
 
-## 五、招式与道具
-
-### 5.1 招式查询
-
-```sql
-SELECT name_zh, type, category, power, accuracy, pp, description, effect
-FROM moves
-WHERE name_zh = '{move_name}';
-```
-
-**注意：** `power` 字段是 TEXT 类型，可能包含 `'—'`（变化招式）、`'不定'`等，使用时需转换。
-
-**招式分类（辅助特性判断）：**
-
-| 分类 | 相关特性 | 判断方式 |
-|------|---------|---------|
-| 拳类 | 铁拳 ×1.2 | 招式的 description 含「拳」，或中文名含「拳」「巴掌」 |
-| 咬类 | 强壮之颚 ×1.5 | 中文名含「咬」「啃」「噬」 |
-| 声音类 | 隔音免疫、庞克摇滚 ×1.3 | 中文名含「声」「音」「歌」「吼」「叫」「鸣」 |
-| 波动类 | 波动无防备（Mega拉鲁拉丝） | 中文名含「波动」「波」 |
-| 弹/炸弹类 | 防弹免疫 | 中文名含「弹」「球」或英文为Ball/Bomb |
-
-### 5.2 道具查询
-
-```sql
-SELECT name_zh, description, category_path
-FROM items
-WHERE name_zh = '{item_name}';
-```
-
-**道具效果分类（伤害计算时判断参数放哪里）：**
-
-| 类别 | 效果 | 影响参数 | 示例 |
-|------|------|---------|------|
-| 属性增强 | XX属性招式威力×1.2 | move_power | 木炭、神秘水滴、奇迹种子、磁铁…… |
-| 能力增强 | 攻击/特攻×1.5 | 能力值（atk_stats） | 讲究头带、讲究眼镜 |
-| 泛用增伤 | 伤害×1.3 或 效果绝佳时×1.2 | other_mod | 生命宝珠、达人带 |
-| 抗性果 | 受到效果绝佳的XX属性×0.5（一次性） | other_mod | 抗火果、抗冰果…… |
-| 半减果 | HP≤1/4时 ×0.5（一次性） | other_mod | 勿花果、枝荔果…… |
-
-### 5.3 特性查询（获取效果文本）
-
-```sql
--- 从数据库查
-SELECT name_zh, name_en, introduction, effect
-FROM abilities
-WHERE name_zh = '{ability_name}';
-```
-
-或从 JSON 数据集读取：
+## 7. 规则集
 
 ```python
-import json, os
-ability_dir = r'D:\astrbot\databasepoke\pokemon-dataset-zh-main\data\abilities'
-filepath = os.path.join(ability_dir, f'{ability_name}.json')
-if os.path.exists(filepath):
-    with open(filepath, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+from calc_damage import list_rulesets, get_ruleset
+
+print(list_rulesets())      # 列出所有规则集
+rs = get_ruleset('champions_reg_m_a')  # 查特定规则集
 ```
 
-拿到效果文本后，按第三章的流程处理。
-
----
-
-## 六、规则集查询
-
-### 6.1 列出所有规则集
-
-```python
-from calc_damage import list_rulesets
-print(list_rulesets())
-```
-
-### 6.2 查询特定规则集
-
-```python
-from calc_damage import get_ruleset
-rs = get_ruleset('champions_reg_m_a')
-```
-
-### 6.3 当前主流规则集
+当前主流规则集：
 
 | 规则集 | 游戏 | 时期 | 特点 |
-|--------|------|------|------|
-| `champions_reg_m_a` | Champions | 2026.4-2026.6 | 🥇允许Mega，禁止传说/悖谬 |
+|:------|:----|:----|:-----|
+| `champions_reg_m_a` | 宝可梦冠军 | 2026.4-2026.6 | 允许Mega，禁止传说/悖谬 |
 | `sv_regulation_g` | 朱紫 | 2025.4- | 允许1只传说 |
 | `sv_regulation_h` | 朱紫 | 2024.9-2025.1 | 限制最大 |
 
-### 6.4 规则适用判断
-
-收到查询时，默认使用 `champions_reg_m_a`。如果用户提到「朱紫」「VGC」，切到朱紫规则集。
+> 未指定时默认 Champions。用户提到「朱紫」「VGC」时切到朱紫规则集。
 
 ---
 
-## 七、队伍构建辅助（静态数据分析）
-
-**本模块只分析静态数据，不涉及环境热门宝可梦。** 环境数据不在当前数据库中。
-
-### 7.1 防御联防分析
-
-给定一支队伍，计算整体防御弱点覆盖情况：
-
-```python
-def analyze_defensive_synergy(team):
-    """
-    输入: [('振翼发', '一般'), ('厄诡椪', '碧草面具'), ('快龙', '一般'), ...]
-    输出: 
-      - cover_rate: 各属性被队伍中至少一只宝可梦抗/免疫的比例
-      - weak_spots: 队伍中≥2只宝可梦共同弱点的属性
-      - four_times_weak: 队伍中四倍弱点的宝可梦列表
-    """
-    # 实现：遍历每只宝可梦，查 pokemon_type_effectiveness
-    # 统计各属性的抗性覆盖情况
-    pass
-```
-
-**输出格式示例：**
-
-```
-队伍联防分析：
-─────────────────────────
-✅ 良好覆盖：火、水、草、电、格斗（≥2只抗性）
-⚠️ 轻微漏洞：地面（仅1只抗性）
-💀 严重漏洞：冰（无人抗性）
-⚠️ 共同弱点：岩石（3只弱岩）
-💀 四倍弱点：暴鲤龙弱电×4
-```
-
-### 7.2 本系打击面分析
-
-```python
-def analyze_stab_coverage(team):
-    """
-    输入: [('振翼发', '一般'), ('厄诡椪', '碧草面具'), ...]
-    输出: 队伍的 STAB 打击面覆盖了哪些属性，遗漏了哪些属性
-    """
-    # 实现：每个成员的属性就是其 STAB 属性
-    # 查每个 STAB 属性打击面（type_effectiveness）
-    # 汇总为整体 STAB 覆盖
-    pass
-```
-
-**输出格式示例：**
-
-```
-本系打击面分析：
-─────────────────────────
-💪 有效打击（≥1个STAB能打出×2以上）：
-  水（暴鲤龙）、草（厄诡椪）、幽灵+妖精（振翼发）
-❌ 打击盲点（无STAB能打出×2以上）：
-  钢、毒、火、地面
-```
-
-### 7.3 速度线参考
-
-如果需要对比队伍内外的速度线，使用章节 9.1 的速度比较方法。
-
----
-
-## 八、数据库维护
-
-### 8.1 数据库结构概览
-
-```
-pokemon                    → 宝可梦基本信息
-pokemon_forms              → 形态信息（属性、特性、身高体重）
-pokemon_stats              → 种族值（六维，区分形态）
-pokemon_type_effectiveness → 属性相克倍率（已合并双属性，区分形态）
-moves                      → 招式信息
-abilities                  → 特性效果
-items                      → 道具信息
-pokemon_learnable_moves    → 升级学习招式
-pokemon_machine_moves      → 机器学习招式
-pokemon_egg_moves          → 蛋招式
-pokemon_evolution_chains   → 进化链
-ruleset_pokemon            → 规则集禁用列表
-```
-
-### 8.2 更新流程：检测上游数据源更新
-
-当收到「游戏更新了」时：
-
-```
-步骤 1：检查上游是否有更新
-─────────────────────────────
-   上游：https://github.com/42arch/pokemon-dataset-zh
-   方法 A（推荐）：
-     cd D:\astrbot\databasepoke\pokemon-dataset-zh-main
-     git fetch origin main
-     git log HEAD..origin/main --oneline
-   方法 B（git 连不上时）：
-     访问上游 GitHub 页面，看 Latest commit 日期
-     判断是否有新提交
-
-步骤 2→5：同 v1.0，见文档末尾备注
-```
-
-### 8.3 单条数据修改
-
-```sql
--- 更新种族值
-UPDATE pokemon_stats SET attack=110 WHERE pokedex_id='006' AND form='一般';
--- 添加新形态
-INSERT INTO pokemon_forms (...) VALUES (...);
-```
-
----
-
-## 九、其他常见查询
-
-### 9.1 速度比较
-
-默认用 Champions SP 系统计算：
-
-```python
-from calc_damage import calc_champions_stats
-
-a = calc_champions_stats(6, sps={'speed':32}, nature='爽朗')   # 喷火龙极速
-b = calc_champions_stats(9, sps={'speed':32}, nature='爽朗')   # 水箭龟极速
-```
-
-需要考虑的因素：
-- 特性速度提升：轻装（道具用完×2）、叶绿素（晴×2）、悠游自如（雨×2）、拨沙（沙×2）、拨雪（雪×2）
-- 道具：讲究围巾（×1.5）
-- 顺风：速度×2
-- 能力变化阶段
-
-### 9.2 进化链 / 蛋招式 / 可学习招式
+## 8. 进化与学习
 
 ```sql
 -- 进化链
-SELECT * FROM pokemon_evolution_chains WHERE pokedex_id = '{pid}' ORDER BY chain_index;
+SELECT * FROM pokemon_evolution_chains WHERE pokedex_id = '0475' ORDER BY chain_index;
 
 -- 蛋招式
-SELECT move_name, parent_ids FROM pokemon_egg_moves WHERE pokedex_id = '{pid}';
+SELECT move_name, parent_ids FROM pokemon_egg_moves WHERE pokedex_id = '0475';
 
 -- 升级学习
-SELECT level, move_name, move_type, category, power
-FROM pokemon_learnable_moves WHERE pokedex_id = '{pid}' AND form = '{form}'
+SELECT level, move_name, type, category, power
+FROM pokemon_learnable_moves WHERE pokedex_id = '0475' AND form = '一般'
 ORDER BY CAST(level AS INTEGER);
 
--- TM学习
-SELECT machine, move_name, move_type, category, power
-FROM pokemon_machine_moves WHERE pokedex_id = '{pid}' AND form = '{form}';
+-- 招式学习器
+SELECT machine, move_name, type, category, power
+FROM pokemon_machine_moves WHERE pokedex_id = '0475' AND form = '一般';
 ```
 
 ---
 
-## 十、调用优先级与兜底
-
-### 10.1 查询优先级
-
-```
-1. SQLite 数据库（pokemon.db）      → 最快、最准确
-2. JSON 数据集                      → 补充数据（特性详细效果）
-3. calc_damage.py 函数              → 计算类任务
-4. 神奇宝贝百科/官方信息来源          → 数据库没有时，建议用户自行查阅
-5. 绝对禁止：编造数据
-```
-
-### 10.2 查不到时的处理
+## 9. 兜底规则
 
 | 情况 | 处理方式 |
-|------|---------|
-| 宝可梦名不存在 | 提示「未找到」，给出相似名称建议 |
+|:----|:--------|
+| 宝可梦名不存在 | 提示未找到，给出相近名称建议 |
 | 招式名不存在 | 同上 |
 | 形态不存在 | 列出该宝可梦所有已知形态让用户确认 |
-| 数据未收录（如新世代） | 提示「当前数据库仅收录至 Gen 9，建议更新」 |
-| 特性效果文本不明确 | 读原文后用自己的理解描述效果，不自作主张加数值 |
-| 排位使用率相关 | 告知「当前数据库不包含排位数据」 |
+| 特性不在 `ability_effects` 表 | 查 `abilities` 表读 `effect` 原文，自行判断 |
+| 数据未收录（如新世代） | 提示当前数据库仅收录至 Gen 9 |
+| 排位使用率相关 | 告知当前数据库不包含排位数据 |
+| **查不到就是查不到** | **绝对不要编造数据** |
 
 ---
 
-## 十一、更新日志
+## 附录：数据库结构
 
-| 日期 | 版本 | 变更 |
-|------|------|------|
-| 2026-05-03 | v1.1 | 重写结构：Champions 设为默认环境；新增独立特性判定模块（第三章）；简化队伍分析为静态数据 |
-| 2026-05-03 | v1.0 | 初始版本 |
+```
+pokemon.db（SQLite）
+
+pokemon                     宝可梦 ID、中英文名
+pokemon_forms               形态、属性、特性列表、身高体重
+pokemon_stats               种族值（六维，区分形态）
+pokemon_type_effectiveness  属性相克倍率（已合并双属性）
+moves                       招式信息（含9个分类标签字段）
+abilities                   特性效果原文（307条）
+ability_effects             特性结构化数据（163条，影响伤害计算的）
+items                       道具信息
+pokemon_evolution_chains    进化链
+pokemon_egg_moves           蛋招式
+pokemon_learnable_moves     升级学习招式
+pokemon_machine_moves       招式学习器
+ruleset_pokemon             规则集禁用列表
+```
 
 ---
 
-> **附录：常用快捷调用**
->
-> ```python
-> # Champions 确一判断（默认）
-> from calc_damage import quick_calc_champions
-> print(quick_calc_champions('振翼发', '月亮之力', '快龙', atk_sp=32, nature='内敛'))
->
-> # 朱紫确一判断
-> from calc_damage import quick_calc
-> print(quick_calc('振翼发', '月亮之力', '快龙', atk_ev=252, nature='内敛'))
->
-> # 规则集速查
-> from calc_damage import list_rulesets
-> print(list_rulesets())
-> ```
+## 附录：calc_damage.py 对外接口
+
+```python
+from calc_damage import (
+    calc_champions_stats,   # Champions SP 能力值
+    calc_gen9_stats,        # 朱紫/Gen9 能力值
+    calc_damage,            # 完整伤害计算（核心）
+    calc_damage_raw,        # 纯数值伤害计算
+    list_rulesets,          # 列出规则集
+    get_ruleset,            # 查规则集详情
+)
+```
+
+---
+
+*版本：v2.1 | 最后更新：2026-05-03*
